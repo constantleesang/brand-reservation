@@ -25,24 +25,24 @@
         <form id="reservationForm">
             <div class="form-group">
                 <label>이름</label>
-                <input type="text" id="name" required placeholder="성함을 입력하세요">
+                <input type="text" id="name" placeholder="성함을 입력하세요">
             </div>
             <div class="form-group">
                 <label>연락처 (중복 불가)</label>
-                <input type="text" id="phone" required placeholder="010-0000-0000">
+                <input type="text" id="phone" placeholder="010-0000-0000">
             </div>
             <div class="form-group">
                 <label>소속 (학과)</label>
-                <input type="text" id="department" required placeholder="예: 기계공학과">
+                <input type="text" id="department" placeholder="예: 기계공학과">
             </div>
             <div class="form-group">
                 <label>학번 (중복 불가)</label>
-                <input type="text" id="studentId" required placeholder="학번 10자리 입력">
+                <input type="text" id="studentId" placeholder="학번 10자리 입력">
             </div>
 
             <div class="form-group">
                 <label>신발 브랜드 선택</label>
-                <select id="brand" required onchange="updateSizes()">
+                <select id="brand" onchange="updateSizes()">
                     <option value="">브랜드를 선택하세요</option>
                     <option value="나이키">나이키</option>
                     <option value="아디다스">아디다스</option>
@@ -56,7 +56,7 @@
 
             <div class="form-group">
                 <label>신발 사이즈 선택 (220~300, 5단위 / 브랜드 선택 후 활성화)</label>
-                <select id="shoeSize" required disabled>
+                <select id="shoeSize" disabled>
                     <option value="">먼저 브랜드를 선택해주세요</option>
                 </select>
                 <small id="sizeNotice" style="color: #666; display: block; margin-top: 4px;"></small>
@@ -64,8 +64,8 @@
 
             <div class="form-group">
                 <label>방문 예약 날짜 (10월 7일, 8일, 12일)</label>
-                <select id="date" required>
-                    <option value="">날짜를 선택하세요</option>
+                <select id="date" onchange="loadTimeSlots()">
+                    <option value="">날짜를 먼저 선택하세요</option>
                     <option value="10월 7일">10월 7일</option>
                     <option value="10월 8일">10월 8일</option>
                     <option value="10월 12일">10월 12일</option>
@@ -73,14 +73,14 @@
             </div>
 
             <div class="form-group">
-                <label>예약 시간 선택</label>
-                <select id="time" required>
-                    <option value="">시간을 불러오는 중...</option>
+                <label>예약 시간 선택 (날짜 선택 후 활성화)</label>
+                <select id="time" disabled>
+                    <option value="">날짜를 먼저 선택하세요</option>
                 </select>
             </div>
 
             <div class="checkbox-group">
-                <input type="checkbox" id="privacyAgreed" required>
+                <input type="checkbox" id="privacyAgreed">
                 <label for="privacyAgreed" style="font-weight:normal; margin:0;">[필수] 개인정보 수집 및 이용에 동의합니다.</label>
             </div>
 
@@ -100,36 +100,57 @@
 
     <script>
         let globalCounts = [];
-
-        async function loadTimeSlots() {
-            try {
-                const res = await fetch('/api/time-slots');
-                const slots = await res.json();
-                const timeSelect = document.getElementById('time');
-                timeSelect.innerHTML = '<option value="">시간을 선택하세요</option>';
-                
-                slots.forEach(slot => {
-                    const opt = document.createElement('option');
-                    opt.value = slot.time;
-                    if (!slot.is_active) {
-                        opt.textContent = `${slot.time} (관리자 마감)`;
-                        opt.disabled = true;
-                        opt.className = 'disabled-slot';
-                    } else {
-                        opt.textContent = slot.time;
-                    }
-                    timeSelect.appendChild(opt);
-                });
-            } catch (err) {
-                console.error(err);
-            }
-        }
+        let allReservations = [];
 
         async function loadCounts() {
             try {
                 const res = await fetch('/api/shoe-counts');
                 globalCounts = await res.json();
-                updateSizes(); // 현재 브랜드가 선택되어 있다면 사이즈 상태 갱신
+                
+                const resAll = await fetch('/api/reservations');
+                allReservations = await resAll.json();
+
+                updateSizes(); 
+                if (document.getElementById('date').value) {
+                    loadTimeSlots();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function loadTimeSlots() {
+            const selectedDate = document.getElementById('date').value;
+            const timeSelect = document.getElementById('time');
+            
+            if (!selectedDate) {
+                timeSelect.innerHTML = '<option value="">날짜를 먼저 선택하세요</option>';
+                timeSelect.disabled = true;
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/time-slots?date=${encodeURIComponent(selectedDate)}`);
+                const slots = await res.json();
+                timeSelect.innerHTML = '<option value="">시간을 선택하세요</option>';
+                timeSelect.disabled = false;
+                
+                slots.forEach(slot => {
+                    // 해당 날짜 + 해당 시간대에 이미 예약된 인원 수 계산 (최대 3명 제한)
+                    const slotCount = allReservations.filter(item => item.date === selectedDate && item.time === slot.time && item.status !== 'cancelled').length;
+                    
+                    const opt = document.createElement('option');
+                    opt.value = slot.time;
+                    
+                    if (!slot.is_active || slotCount >= 3) {
+                        opt.textContent = `${slot.time} (${slotCount >= 3 ? `마감 3/3` : '관리자 마감'})`;
+                        opt.disabled = true;
+                        opt.className = 'disabled-slot';
+                    } else {
+                        opt.textContent = `${slot.time} (신청 가능 ${slotCount}/3)`;
+                    }
+                    timeSelect.appendChild(opt);
+                });
             } catch (err) {
                 console.error(err);
             }
@@ -149,8 +170,7 @@
 
             sizeSelect.disabled = false;
             for (let size = 220; size <= 300; size += 5) {
-                // 해당 브랜드 & 해당 사이즈의 현재 신청자 수 카운트 (3명 한계)
-                const count = globalCounts.filter(item => item.brand === brand && Number(item.shoe_size) === size).length;
+                const count = globalCounts.filter(item => item.brand === brand && Number(item.shoe_size) === size && item.status !== 'cancelled').length;
                 const opt = document.createElement('option');
                 opt.value = size;
 
@@ -168,26 +188,42 @@
 
         document.getElementById('reservationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const payload = {
-                name: document.getElementById('name').value,
-                phone: document.getElementById('phone').value,
-                department: document.getElementById('department').value,
-                studentId: document.getElementById('studentId').value,
-                brand: document.getElementById('brand').value,
-                shoeSize: document.getElementById('shoeSize').value,
-                date: document.getElementById('date').value,
-                time: document.getElementById('time').value,
-                privacyAgreed: document.getElementById('privacyAgreed').checked
-            };
 
-            const res = await fetch('/api/reservations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const result = await res.json();
-            alert(result.message);
-            if (result.success) location.reload();
+            // 프론트엔드 필수 입력 검증 및 알림
+            const name = document.getElementById('name').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const department = document.getElementById('department').value.trim();
+            const studentId = document.getElementById('studentId').value.trim();
+            const brand = document.getElementById('brand').value;
+            const shoeSize = document.getElementById('shoeSize').value;
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const privacyAgreed = document.getElementById('privacyAgreed').checked;
+
+            if (!name) { alert('이름을 입력해주세요.'); document.getElementById('name').focus(); return; }
+            if (!phone) { alert('연락처를 입력해주세요.'); document.getElementById('phone').focus(); return; }
+            if (!department) { alert('소속(학과)을 입력해주세요.'); document.getElementById('department').focus(); return; }
+            if (!studentId) { alert('학번을 입력해주세요.'); document.getElementById('studentId').focus(); return; }
+            if (!brand) { alert('신발 브랜드를 선택해주세요.'); document.getElementById('brand').focus(); return; }
+            if (!shoeSize) { alert('신발 사이즈를 선택해주세요.'); document.getElementById('shoeSize').focus(); return; }
+            if (!date) { alert('방문 예약 날짜를 선택해주세요.'); document.getElementById('date').focus(); return; }
+            if (!time) { alert('예약 시간을 선택해주세요.'); document.getElementById('time').focus(); return; }
+            if (!privacyAgreed) { alert('개인정보 수집 및 이용에 동의해주세요.'); document.getElementById('privacyAgreed').focus(); return; }
+
+            const payload = { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed };
+
+            try {
+                const res = await fetch('/api/reservations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                alert(result.message);
+                if (result.success) location.reload();
+            } catch (err) {
+                alert('서버 통신 중 오류가 발생했습니다.');
+            }
         });
 
         async function searchReservation() {
@@ -225,8 +261,7 @@
             if (result.success) location.reload();
         }
 
-        // 초기 데이터 로드
-        loadTimeSlots();
+        // 페이지 진입 시 데이터 로드
         loadCounts();
     </script>
 </body>

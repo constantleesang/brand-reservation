@@ -17,8 +17,41 @@ const mailOptions = {
     text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
 };
 
-await transporter.sendMail(mailOptions);
-console.log('관리자 알림 이메일 전송 성공!');
+// 예약 API (POST)
+app.post('/api/reservations', async (req, res) => {
+    try {
+        const { brand, time_slot, student_id, name } = req.body;
+
+        // 1. Supabase에 예약 데이터 저장
+        const { data, error } = await supabase
+            .from('reservations') // 본인의 테이블 이름에 맞게 수정
+            .insert([{ brand, time_slot, student_id, name }]);
+
+        if (error) throw error;
+
+        // 2. 관리자 이메일 발송 (async 함수 안이므로 await 사용 가능!)
+        const mailOptions = {
+            from: process.env.GMAIL_USER,
+            to: process.env.GMAIL_USER, // 관리자 알림을 받을 본인 지메일
+            subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
+            text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log('관리자 알림 이메일 전송 성공!');
+
+        res.status(200).json({ success: true, message: '예약 및 메일 발송 성공' });
+    } catch (err) {
+        console.error('에러 발생:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// 서버 실행 (Render 환경에 맞춘 port 설정)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Render 배포를 위해 환경 변수 포트 설정

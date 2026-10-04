@@ -1,7 +1,6 @@
 const express = require('express');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
-const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,18 +13,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gpplcfeeuxsanujakgdd.supabase.co'; 
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_Gmk6NGhdwPqD8slu9Z6WDw_nwaNF2aH'; 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// Nodemailer 지메일 설정
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // true for 465, false for other ports
-    auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_PASS
-    },
-    connectionTimeout: 10000 // 타임아웃 시간 연장
-});
 
 // 1. 전체 예약 목록 조회 (관리자용 - 신청시간 포함, 카멜케이스 매핑)
 app.get('/api/reservations', async (req, res) => {
@@ -99,7 +86,7 @@ app.get('/api/reservations/search', async (req, res) => {
     }
 });
 
-// 6. 예약 신청 (중복 체크, 사이즈별 3명 제한 검증 및 메일 타임아웃 방지 비동기 처리)
+// 6. 예약 신청 (중복 체크, 사이즈별 3명 제한 검증)
 app.post('/api/reservations', async (req, res) => {
     const { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed } = req.body;
 
@@ -140,23 +127,7 @@ app.post('/api/reservations', async (req, res) => {
         const { error: insertErr } = await supabase.from('brand_reservations').insert([newReservation]);
         if (insertErr) throw insertErr;
 
-        // 💡 프론트엔드로 성공 응답을 즉시 반환하여 "서버 오류" 메시지 원천 차단
         res.json({ success: true, message: '신발 데이터 베이스 구축 참여 예약이 완료되었습니다!' });
-
-        // 메일 발송은 백그라운드에서 처리 (네트워크 타임아웃이 발생해도 예약 성공에는 영향 없음)
-        const mailOptions = {
-            from: process.env.GMAIL_USER,
-            to: process.env.GMAIL_USER,
-            subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
-            text: `[신규 예약 정보]\n\n- 이름: ${name}\n- 학번: ${studentId}\n- 학과: ${department}\n- 연락처: ${phone}\n- 브랜드: ${brand}\n- 사이즈: ${shoeSize}mm\n- 예약일시: ${date} ${time}`
-        };
-
-        transporter.sendMail(mailOptions).then(() => {
-            console.log('관리자 알림 이메일 전송 성공!');
-        }).catch(mailErr => {
-            console.log('메일 전송 실패 (네트워크 타임아웃 등):', mailErr.message);
-        });
-
     } catch (err) {
         console.error('예약 처리 중 에러 발생:', err);
         res.status(500).json({ success: false, message: '서버 오류로 예약을 완료하지 못했습니다.' });

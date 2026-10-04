@@ -5,112 +5,169 @@
     <title>관리자 페이지 - 신발 DB 구축 신청 현황</title>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background: #f4f6f9; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         h2 { color: #003366; border-bottom: 2px solid #003366; padding-bottom: 10px; }
         .section { margin-top: 30px; }
+        .date-section { margin-bottom: 20px; background: #f9fbfd; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
+        .date-section h4 { margin: 0 0 10px 0; color: #003366; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: center; font-size: 14px; }
         th { background: #003366; color: white; }
-        .btn-toggle { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-toggle { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin: 4px; }
         .active-on { background: #28a745; color: white; }
         .active-off { background: #dc3545; color: white; }
+        .badge { display: inline-block; padding: 3px 8px; background: #e9ecef; border-radius: 4px; font-weight: bold; color: #495057; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>관리자 대시보드 - 신발 DB 구축 신청 관리</h2>
 
-        <!-- 시간대별 제어 섹션 -->
+        <!-- 날짜별 시간대별 제어 섹션 -->
         <div class="section">
-            <h3>⏰ 예약 시간대 활성화 / 마감 관리</h3>
-            <div id="timeSlotsControl" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;"></div>
+            <h3>⏰ 날짜별 예약 시간대 활성화 / 마감 관리</h3>
+            <div id="dateSlotsControlContainer"></div>
         </div>
 
         <!-- 전체 신청자 현황 -->
         <div class="section">
-            <h3>📋 전체 신청자 목록 (신청 시간 포함)</h3>
+            <h3>📋 전체 신청자 목록 (신청번호 및 브랜드 순서 포함)</h3>
             <table>
                 <thead>
                     <tr>
+                        <th>신청번호</th>
                         <th>신청시간</th>
                         <th>이름</th>
                         <th>연락처</th>
                         <th>학과</th>
                         <th>학번</th>
                         <th>브랜드</th>
-                        <th>사이즈</th>
+                        <th>사이즈 / 순서</th>
                         <th>방문일정</th>
                         <th>상태</th>
                     </tr>
                 </thead>
                 <tbody id="reservationTableBody">
-                    <tr><td colspan="9">데이터를 불러오는 중...</td></tr>
+                    <tr><td colspan="10">데이터를 불러오는 중...</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 
     <script>
+        let previousReservationCount = -1;
+
         async function loadAdminData() {
-            // 1. 시간대 관리 목록 로드
-            const slotRes = await fetch('/api/time-slots');
-            const slots = await slotRes.json();
-            const slotContainer = document.getElementById('timeSlotsControl');
-            slotContainer.innerHTML = '';
+            try {
+                // 1. 날짜별 시간대 관리 목록 로드
+                const slotRes = await fetch('/api/time-slots');
+                const slots = await slotRes.json();
+                const controlContainer = document.getElementById('dateSlotsControlContainer');
+                controlContainer.innerHTML = '';
 
-            slots.forEach(slot => {
-                const btn = document.createElement('button');
-                btn.className = `btn-toggle ${slot.is_active ? 'active-on' : 'active-off'}`;
-                btn.textContent = `${slot.time} (${slot.is_active ? '활성' : '마감'})`;
-                btn.onclick = () => toggleTimeSlot(slot.time, !slot.is_active);
-                slotContainer.appendChild(btn);
-            });
+                // 날짜별 그룹화
+                const dates = ['10월 7일', '10월 8일', '10월 12일'];
+                dates.forEach(date => {
+                    const dateBox = document.createElement('div');
+                    dateBox.className = 'date-section';
+                    dateBox.innerHTML = `<h4>📅 ${date}</h4>`;
+                    const btnWrapper = document.createElement('div');
+                    btnWrapper.style.display = 'flex';
+                    btnWrapper.style.gap = '8px';
+                    btnWrapper.style.flexWrap = 'wrap';
 
-            // 2. 전체 예약 목록 로드
-            const res = await fetch('/api/reservations');
-            const data = await res.json();
-            const tbody = document.getElementById('reservationTableBody');
-            
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9">신청 내역이 없습니다.</td></tr>';
-                return;
+                    const dateSlots = slots.filter(s => s.date === date);
+                    dateSlots.forEach(slot => {
+                        const btn = document.createElement('button');
+                        btn.className = `btn-toggle ${slot.is_active ? 'active-on' : 'active-off'}`;
+                        btn.textContent = `${slot.time} (${slot.is_active ? '활성' : '마감'})`;
+                        btn.onclick = () => toggleTimeSlot(slot.id, !slot.is_active);
+                        btnWrapper.appendChild(btn);
+                    });
+
+                    dateBox.appendChild(btnWrapper);
+                    controlContainer.appendChild(dateBox);
+                });
+
+                // 2. 전체 예약 목록 로드
+                const res = await fetch('/api/reservations');
+                const data = await res.json();
+                const tbody = document.getElementById('reservationTableBody');
+                
+                // 새로운 신청 감지 알림 기능 (처음 로딩 제외)
+                if (previousReservationCount !== -1 && data.length > previousReservationCount) {
+                    alert('🚨 새로운 예약 신청이 접수되었습니다!');
+                }
+                previousReservationCount = data.length;
+
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10">신청 내역이 없습니다.</td></tr>';
+                    return;
+                }
+
+                // 동일 브랜드 및 사이즈별 순서 계산을 위한 정렬 및 카운팅용 배열
+                // 오래된 신청 순서대로 순번을 매기기 위해 복사 후 날짜순 정렬
+                const sortedForOrder = [...data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                const brandSizeCounters = {};
+
+                let html = '';
+                // 목록은 최신순으로 출력하되, 순서는 누적 순번 부여
+                data.forEach((item, index) => {
+                    const formattedTime = new Date(item.createdAt).toLocaleString('ko-KR');
+                    
+                    // 동일 브랜드 & 사이즈 순서 계산
+                    const key = `${item.brand}_${item.shoeSize}`;
+                    if (!brandSizeCounters[key]) {
+                        brandSizeCounters[key] = 0;
+                    }
+                    // 역순(최신순) 정렬 기준일 때 전체 순번 매기기 위해 전체 배열 기준으로 처리
+                    // 정확한 순번을 위해 전체 내역 기준 해당 브랜드/사이즈의 몇 번째인지 파악
+                    const matchingItems = sortedForOrder.filter(i => i.brand === item.brand && i.shoeSize === item.shoeSize && i.status !== 'cancelled');
+                    const itemSeq = matchingItems.findIndex(i => i.id === item.id) + 1;
+                    const seqBadge = (item.status !== 'cancelled' && itemSeq > 0) ? `<span class="badge">[${itemSeq}번째]</span>` : '';
+
+                    html += `
+                        <tr>
+                            <td><b>#${data.length - index}</b></td>
+                            <td>${formattedTime}</td>
+                            <td><b>${item.name}</b></td>
+                            <td>${item.phone}</td>
+                            <td>${item.department}</td>
+                            <td>${item.studentId}</td>
+                            <td>${item.brand}</td>
+                            <td>${item.shoeSize}mm ${seqBadge}</td>
+                            <td>${item.date} ${item.time}</td>
+                            <td><span style="color:${item.status === 'confirmed' ? 'green' : 'red'}; font-weight:bold;">${item.status === 'confirmed' ? '신청완료' : item.status}</span></td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } catch (err) {
+                console.error('관리자 데이터 로드 실패:', err);
             }
-
-            let html = '';
-            data.forEach(item => {
-                const formattedTime = new Date(item.createdAt).toLocaleString('ko-KR');
-                html += `
-                    <tr>
-                        <td>${formattedTime}</td>
-                        <td><b>${item.name}</b></td>
-                        <td>${item.phone}</td>
-                        <td>${item.department}</td>
-                        <td>${item.studentId}</td>
-                        <td>${item.brand}</td>
-                        <td>${item.shoeSize}mm</td>
-                        <td>${item.date} ${item.time}</td>
-                        <td><span style="color:${item.status === 'confirmed' ? 'green' : 'red'};">${item.status}</span></td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
         }
 
-        async function toggleTimeSlot(time, isActive) {
-            const res = await fetch(`/api/time-slots/${time}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isActive })
-            });
-            const result = await res.json();
-            if (result.success) {
-                loadAdminData();
-            } else {
-                alert('변경 실패');
+        async function toggleTimeSlot(id, isActive) {
+            try {
+                const res = await fetch(`/api/time-slots/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ isActive })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    loadAdminData();
+                } else {
+                    alert('변경 실패');
+                }
+            } catch (err) {
+                alert('통신 오류 발생');
             }
         }
 
+        // 초기 로드 및 5초마다 자동 실시간 갱신 (신규 신청 감지용)
         loadAdminData();
+        setInterval(loadAdminData, 5000);
     </script>
 </body>
 </html>

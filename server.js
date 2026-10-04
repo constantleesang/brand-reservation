@@ -5,8 +5,8 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.legendoa9@gmail.com, // 본인의 지메일 주소
-        pass: process.env.sqtw cuap dxhd gmvl
+        user: process.env.GMAIL_USER, // 본인의 지메일 주소
+        pass: process.env.GMAIL_PASS
   // 아까 발급받은 16자리 앱 비밀번호
     }
 });

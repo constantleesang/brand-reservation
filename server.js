@@ -2,71 +2,27 @@ const express = require('express');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// 미들웨어 설정
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Supabase 설정
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gpplcfeeuxsanujakgdd.supabase.co'; 
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_Gmk6NGhdwPqD8slu9Z6WDw_nwaNF2aH'; 
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Nodemailer 지메일 설정
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.GMAIL_USER, // 본인의 지메일 주소
-        pass: process.env.GMAIL_PASS
-  // 아까 발급받은 16자리 앱 비밀번호
+        user: process.env.GMAIL_USER, // Render 환경 변수 연동
+        pass: process.env.GMAIL_PASS  // Render 환경 변수 연동 (16자리 앱 비밀번호)
     }
 });
-const mailOptions = {
-    from: process.env.GMAIL_USER,
-    to: process.env.GMAIL_USER, // 관리자 알림을 받을 본인 지메일 주소
-    subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
-    text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
-};
-
-// 예약 API (POST)
-app.post('/api/reservations', async (req, res) => {
-    try {
-        const { brand, time_slot, student_id, name } = req.body;
-
-        // 1. Supabase에 예약 데이터 저장
-        const { data, error } = await supabase
-            .from('reservations') // 본인의 테이블 이름에 맞게 수정
-            .insert([{ brand, time_slot, student_id, name }]);
-
-        if (error) throw error;
-
-        // 2. 관리자 이메일 발송 (async 함수 안이므로 await 사용 가능!)
-        const mailOptions = {
-            from: process.env.GMAIL_USER,
-            to: process.env.GMAIL_USER, // 관리자 알림을 받을 본인 지메일
-            subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
-            text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
-        };
-
-        await transporter.sendMail(mailOptions);
-        console.log('관리자 알림 이메일 전송 성공!');
-
-        res.status(200).json({ success: true, message: '예약 및 메일 발송 성공' });
-    } catch (err) {
-        console.error('에러 발생:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// 서버 실행 (Render 환경에 맞춘 port 설정)
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-
-const app = express();
-const PORT = process.env.PORT || 3000; // Render 배포를 위해 환경 변수 포트 설정
-
-// 👇 이 코드가 반드시 있어야 public 폴더 안의 파일들을 읽을 수 있습니다!
-app.use(express.static('public'));
-app.use(express.json()); // JSON 데이터 처리를 위해 함께 추가해 주세요
-
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gpplcfeeuxsanujakgdd.supabase.co'; 
-const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_Gmk6NGhdwPqD8slu9Z6WDw_nwaNF2aH'; 
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // 1. 전체 예약 목록 조회 (관리자용 - 신청시간 포함, 카멜케이스 매핑)
 app.get('/api/reservations', async (req, res) => {
@@ -140,7 +96,7 @@ app.get('/api/reservations/search', async (req, res) => {
     }
 });
 
-// 6. 예약 신청 (중복 체크 및 사이즈별 3명 제한 검증)
+// 6. 예약 신청 (중복 체크, 사이즈별 3명 제한 검증 및 관리자 이메일 알림 전송)
 app.post('/api/reservations', async (req, res) => {
     const { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed } = req.body;
 
@@ -181,9 +137,20 @@ app.post('/api/reservations', async (req, res) => {
         const { error: insertErr } = await supabase.from('brand_reservations').insert([newReservation]);
         if (insertErr) throw insertErr;
 
+        // 💡 관리자 이메일 알림 발송 로직 추가 완료
+        const mailOptions = {
+            from: process.env.GMAIL_USER,
+            to: process.env.GMAIL_USER,
+            subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
+            text: `[신규 예약 정보]\n\n- 이름: ${name}\n- 학번: ${studentId}\n- 학과: ${department}\n- 연락처: ${phone}\n- 브랜드: ${brand}\n- 사이즈: ${shoeSize}mm\n- 예약일시: ${date} ${time}`
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log('관리자 알림 이메일 전송 성공!');
+
         res.json({ success: true, message: '신발 데이터 베이스 구축 참여 예약이 완료되었습니다!' });
     } catch (err) {
-        console.error(err);
+        console.error('예약 처리 중 에러 발생:', err);
         res.status(500).json({ success: false, message: '서버 오류로 예약을 완료하지 못했습니다.' });
     }
 });
@@ -198,4 +165,9 @@ app.delete('/api/reservations/:id', async (req, res) => {
     } catch (err) {
         res.status(500).json({ success: false, message: '취소 중 오류 발생' });
     }
+});
+
+// 서버 실행
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });

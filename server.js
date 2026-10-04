@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 });
 const mailOptions = {
     from: process.env.GMAIL_USER,
-    to: process.env.legendoa9@gmail.com, // 관리자 알림을 받을 본인 지메일 주소
+    to: process.env.GMAIL_USER, // 관리자 알림을 받을 본인 지메일 주소
     subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
     text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
 };

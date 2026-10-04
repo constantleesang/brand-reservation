@@ -1,6 +1,24 @@
 const express = require('express');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const nodemailer = require('nodemailer');
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.legendoa9@gmail.com, // 본인의 지메일 주소
+        pass: process.env.sqtw cuap dxhd gmvl
+  // 아까 발급받은 16자리 앱 비밀번호
+    }
+});
+const mailOptions = {
+    from: process.env.GMAIL_USER,
+    to: process.env.legendoa9@gmail.com, // 관리자 알림을 받을 본인 지메일 주소
+    subject: '[CBNU 신발 예약] 새로운 예약이 접수되었습니다!',
+    text: `[신규 예약 정보]\n\n- 브랜드: ${brand}\n- 예약 시간: ${time_slot}\n- 학번: ${student_id}\n- 이름: ${name}`
+};
+
+await transporter.sendMail(mailOptions);
+console.log('관리자 알림 이메일 전송 성공!');
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Render 배포를 위해 환경 변수 포트 설정

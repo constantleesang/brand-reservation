@@ -32,10 +32,15 @@ app.get('/api/reservations', async (req, res) => {
     }
 });
 
-// 2. 시간대별 활성화 상태 조회
+// 2. 시간대별 활성화 상태 조회 (날짜별 필터 지원)
 app.get('/api/time-slots', async (req, res) => {
+    const { date } = req.query;
     try {
-        const { data, error } = await supabase.from('time_slots').select('*');
+        let query = supabase.from('time_slots').select('*');
+        if (date) {
+            query = query.eq('date', date);
+        }
+        const { data, error } = await query;
         if (error) throw error;
         res.json(data);
     } catch (err) {
@@ -43,12 +48,12 @@ app.get('/api/time-slots', async (req, res) => {
     }
 });
 
-// 3. 관리자: 시간대 활성/비활성화 토글
-app.patch('/api/time-slots/:time', async (req, res) => {
-    const time = req.params.time;
+// 3. 관리자: 시간대 아이디 기반 활성/비활성화 토글
+app.patch('/api/time-slots/:id', async (req, res) => {
+    const id = req.params.id;
     const { isActive } = req.body;
     try {
-        const { error } = await supabase.from('time_slots').update({ is_active: isActive }).eq('time', time);
+        const { error } = await supabase.from('time_slots').update({ is_active: isActive }).eq('id', id);
         if (error) throw error;
         res.json({ success: true, message: '시간 상태가 변경되었습니다.' });
     } catch (err) {
@@ -86,7 +91,7 @@ app.get('/api/reservations/search', async (req, res) => {
     }
 });
 
-// 6. 예약 신청 (중복 체크, 사이즈별 3명 제한 검증)
+// 6. 예약 신청 (중복 체크, 사이즈별 3명 및 시간대별 3명 제한 검증)
 app.post('/api/reservations', async (req, res) => {
     const { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed } = req.body;
 
@@ -95,7 +100,7 @@ app.post('/api/reservations', async (req, res) => {
     }
 
     try {
-        // 전체 예약 데이터 조회 (중복 및 사이즈 정원 체크용)
+        // 전체 예약 데이터 조회 (중복 및 정원 체크용)
         const { data: allData, error: fetchErr } = await supabase.from('brand_reservations').select('*').neq('status', 'cancelled');
         if (fetchErr) throw fetchErr;
 
@@ -109,6 +114,12 @@ app.post('/api/reservations', async (req, res) => {
         const sizeCount = allData.filter(item => item.brand === brand && item.shoe_size === String(shoeSize)).length;
         if (sizeCount >= 3) {
             return res.status(400).json({ success: false, message: `선택하신 [${brand} - ${shoeSize}mm]는 이미 정원 3명이 마감되었습니다.` });
+        }
+
+        // 해당 날짜 및 시간대 신청자 수 카운트 (최대 3명 제한)
+        const timeCount = allData.filter(item => item.date === date && item.time === time).length;
+        if (timeCount >= 3) {
+            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 이미 정원 3명이 마감되었습니다.` });
         }
 
         const newReservation = {

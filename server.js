@@ -3,7 +3,11 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Render 배포를 위해 환경 변수 포트 설정
+
+// 👇 이 코드가 반드시 있어야 public 폴더 안의 파일들을 읽을 수 있습니다!
+app.use(express.static('public'));
+app.use(express.json()); // JSON 데이터 처리를 위해 함께 추가해 주세요
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gpplcfeeuxsanujakgdd.supabase.co'; 
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_Gmk6NGhdwPqD8slu9Z6WDw_nwaNF2aH'; 

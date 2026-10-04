@@ -17,11 +17,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Nodemailer 지메일 설정
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // true for 465, false for other ports
     auth: {
-        user: process.env.GMAIL_USER, // Render 환경 변수 연동
-        pass: process.env.GMAIL_PASS  // Render 환경 변수 연동 (16자리 앱 비밀번호)
-    }
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS
+    },
+    connectionTimeout: 10000 // 타임아웃 시간 연장
 });
 
 // 1. 전체 예약 목록 조회 (관리자용 - 신청시간 포함, 카멜케이스 매핑)

@@ -199,7 +199,3 @@ app.delete('/api/reservations/:id', async (req, res) => {
         res.status(500).json({ success: false, message: '취소 중 오류 발생' });
     }
 });
-
-app.listen(PORT, () => {
-    console.log(`서버 실행 중: http://localhost:${PORT}`);
-});

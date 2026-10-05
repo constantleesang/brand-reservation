@@ -102,7 +102,8 @@
         let globalCounts = [];
         let allReservations = [];
 
-        async function loadCounts() {
+        // 데이터만 백그라운드에서 동기화하고 강제 폼 초기화를 유발하지 않도록 수정
+        async function loadCounts(isBackground = false) {
             try {
                 const res = await fetch('/api/shoe-counts');
                 globalCounts = await res.json();
@@ -110,8 +111,13 @@
                 const resAll = await fetch('/api/reservations');
                 allReservations = await resAll.json();
 
-                updateSizes(); 
-                if (document.getElementById('date').value) {
+                // 최초 로딩이거나 명시적 갱신일 때만 사이즈 목록 다시 그림 (사용자가 선택 중일 때 강제 초기화 방지)
+                if (!isBackground) {
+                    updateSizes(); 
+                }
+                
+                const currentDate = document.getElementById('date').value;
+                if (currentDate) {
                     loadTimeSlots();
                 }
             } catch (err) {
@@ -123,6 +129,9 @@
             const selectedDate = document.getElementById('date').value;
             const timeSelect = document.getElementById('time');
             
+            // 현재 선택되어 있던 시간 값 백업
+            const currentTime = timeSelect.value;
+            
             if (!selectedDate) {
                 timeSelect.innerHTML = '<option value="">날짜를 먼저 선택하세요</option>';
                 timeSelect.disabled = true;
@@ -130,12 +139,12 @@
             }
 
             try {
-                // 예약 내역 최신화 동기화
                 const resAll = await fetch('/api/reservations');
                 allReservations = await resAll.json();
 
                 const res = await fetch(`/api/time-slots?date=${encodeURIComponent(selectedDate)}`);
                 const slots = await res.json();
+                
                 timeSelect.innerHTML = '<option value="">시간을 선택하세요</option>';
                 timeSelect.disabled = false;
                 
@@ -146,7 +155,6 @@
                     const opt = document.createElement('option');
                     opt.value = slot.time;
                     
-                    // 설정 인원(maxCap)을 초과했거나 관리자가 끈 경우 자동 마감 처리
                     if (!slot.is_active || slotCount >= maxCap) {
                         opt.textContent = `${slot.time} (${slotCount >= maxCap ? `마감 정원초과 ${slotCount}/${maxCap}` : '마감'})`;
                         opt.disabled = true;
@@ -156,6 +164,11 @@
                     }
                     timeSelect.appendChild(opt);
                 });
+
+                // 사용자가 이미 선택했던 시간대가 유효하다면 유지
+                if (currentTime) {
+                    timeSelect.value = currentTime;
+                }
             } catch (err) {
                 console.error(err);
             }
@@ -165,6 +178,9 @@
             const brand = document.getElementById('brand').value;
             const sizeSelect = document.getElementById('shoeSize');
             const sizeNotice = document.getElementById('sizeNotice');
+            
+            // 현재 선택되어 있던 사이즈 값 백업
+            const currentSize = sizeSelect.value;
             
             sizeSelect.innerHTML = '<option value="">사이즈를 선택하세요</option>';
             if (!brand) {
@@ -187,6 +203,11 @@
                     opt.textContent = `${size}mm (신청 가능 ${count}/3)`;
                 }
                 sizeSelect.appendChild(opt);
+            }
+
+            // 기존에 선택했던 사이즈가 있다면 복원
+            if (currentSize) {
+                sizeSelect.value = currentSize;
             }
             sizeNotice.textContent = '* 각 사이즈별 신청 인원은 최대 3명으로 제한되며, 3명이 차면 자동 마감됩니다.';
         }
@@ -227,7 +248,7 @@
                     location.reload();
                 } else {
                     alert(result.message);
-                    loadCounts(); // 정보 갱신
+                    loadCounts(); 
                 }
             } catch (err) {
                 alert('서버 통신 중 오류가 발생했습니다.');
@@ -253,7 +274,7 @@
                     html += `
                         <li>
                             <b>[${item.brand} ${item.shoeSize}mm]</b> ${item.date} ${item.time} 
-                            <button onclick="cancelReservation(${item.id})" style="width:auto; padding:3px 6px; font-size:11px; background:#dc3545; margin-left:8px;">예약 취소</button>
+                            <button type="button" onclick="cancelReservation(${item.id})" style="width:auto; padding:3px 6px; font-size:11px; background:#dc3545; margin-left:8px;">예약 취소</button>
                         </li>
                     `;
                 });
@@ -281,9 +302,9 @@
             }
         }
 
-        // 초기 데이터 로드 및 주기적 갱신
+        // 초기 데이터 로드 및 주기적 백그라운드 갱신 (isBackground: true를 주어 사용자 입력값을 방해하지 않음)
         loadCounts();
-        setInterval(loadCounts, 10000);
+        setInterval(() => loadCounts(true), 10000);
     </script>
 </body>
 </html>

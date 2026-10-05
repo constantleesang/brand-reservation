@@ -61,6 +61,19 @@ app.patch('/api/time-slots/:id', async (req, res) => {
     }
 });
 
+// [추가] 3-1. 관리자: 시간대별 최대 제한 인원 변경 API
+app.patch('/api/time-slots/:id/capacity', async (req, res) => {
+    const id = req.params.id;
+    const { maxCapacity } = req.body;
+    try {
+        const { error } = await supabase.from('time_slots').update({ max_capacity: Number(maxCapacity) }).eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: '시간대별 최대 인원이 변경되었습니다.' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: '인원 변경 실패' });
+    }
+});
+
 // 4. 브랜드/사이즈별 현재 신청 인원 카운트 조회 (실시간 마감용)
 app.get('/api/shoe-counts', async (req, res) => {
     try {
@@ -91,7 +104,7 @@ app.get('/api/reservations/search', async (req, res) => {
     }
 });
 
-// 6. 예약 신청 (중복 체크, 사이즈별 3명 및 시간대별 3명 제한 검증)
+// 6. 예약 신청 (중복 체크, 사이즈별 3명 및 시간대별 동적 인원 제한 검증)
 app.post('/api/reservations', async (req, res) => {
     const { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed } = req.body;
 
@@ -110,16 +123,28 @@ app.post('/api/reservations', async (req, res) => {
             return res.status(400).json({ success: false, message: '이미 해당 학번이나 연락처로 신청된 내역이 존재합니다. (1인 1회)' });
         }
 
-        // 해당 브랜드의 해당 사이즈 신청자 수 카운트 (최대 3명 제한)
+        // 해당 브랜드의 해당 사이즈 신청자 수 카운트 (최대 3명 제한 유지)
         const sizeCount = allData.filter(item => item.brand === brand && item.shoe_size === String(shoeSize)).length;
         if (sizeCount >= 3) {
             return res.status(400).json({ success: false, message: `선택하신 [${brand} - ${shoeSize}mm]는 이미 정원 3명이 마감되었습니다.` });
         }
 
-        // 해당 날짜 및 시간대 신청자 수 카운트 (최대 3명 제한)
+        // [수정] 해당 날짜 및 시간대의 슬롯 설정 정보(최대 인원, 활성화 여부) 조회
+        const { data: slotData, error: slotErr } = await supabase.from('time_slots').select('*').eq('date', date).eq('time', time).single();
+        if (slotErr || !slotData) {
+            return res.status(400).json({ success: false, message: '유효하지 않은 예약 시간대입니다.' });
+        }
+
+        if (!slotData.is_active) {
+            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 마감되었습니다.` });
+        }
+
+        // 해당 날짜 및 시간대 실제 예약자 수 카운트
         const timeCount = allData.filter(item => item.date === date && item.time === time).length;
-        if (timeCount >= 3) {
-            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 이미 정원 3명이 마감되었습니다.` });
+        const maxLimit = slotData.max_capacity; // 시간대별 설정된 최대 제한 인원
+
+        if (timeCount >= maxLimit) {
+            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 정원 ${maxLimit}명이 마감되었습니다.` });
         }
 
         const newReservation = {

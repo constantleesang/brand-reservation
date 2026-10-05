@@ -10,16 +10,18 @@
         .section { margin-top: 30px; }
         .date-section { margin-bottom: 20px; background: #f9fbfd; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
         .date-section h4 { margin: 0 0 10px 0; color: #003366; }
+        .slot-card { display: inline-flex; align-items: center; background: #fff; border: 1px solid #ccc; padding: 6px 10px; border-radius: 6px; margin: 4px; gap: 6px; font-size: 13px; }
+        .btn-toggle { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; }
+        .active-on { background: #28a745; }
+        .active-off { background: #dc3545; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: center; font-size: 14px; }
         th { background: #003366; color: white; }
-        .btn-toggle { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin: 4px; }
-        .active-on { background: #28a745; color: white; }
-        .active-off { background: #dc3545; color: white; }
         .badge { display: inline-block; padding: 3px 8px; background: #e9ecef; border-radius: 4px; font-weight: bold; color: #495057; font-size: 12px; }
         .btn-excel { background: #28a745; color: white; border: none; padding: 8px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; }
         .btn-excel:hover { background: #218838; }
         .table-header-flex { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; }
+        input[type="number"] { width: 45px; padding: 3px; text-align: center; border: 1px solid #bbb; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -30,7 +32,7 @@
 
         <!-- 날짜별 시간대별 제어 섹션 -->
         <div class="section">
-            <h3>⏰ 날짜별 예약 시간대 활성화 / 마감 관리</h3>
+            <h3>⏰ 날짜별 예약 시간대 활성화 및 제한 인원 설정</h3>
             <div id="dateSlotsControlContainer"></div>
         </div>
 
@@ -71,6 +73,12 @@
                 // 1. 날짜별 시간대 관리 목록 로드
                 const slotRes = await fetch('/api/time-slots');
                 const slots = await slotRes.json();
+                
+                // 예약 내역도 함께 가져와서 현재 몇 명이 신청했는지 카드에 표시
+                const res = await fetch('/api/reservations');
+                const data = await res.json();
+                cachedReservations = data;
+
                 const controlContainer = document.getElementById('dateSlotsControlContainer');
                 controlContainer.innerHTML = '';
 
@@ -80,29 +88,34 @@
                     const dateBox = document.createElement('div');
                     dateBox.className = 'date-section';
                     dateBox.innerHTML = `<h4>📅 ${date}</h4>`;
-                    const btnWrapper = document.createElement('div');
-                    btnWrapper.style.display = 'flex';
-                    btnWrapper.style.gap = '8px';
-                    btnWrapper.style.flexWrap = 'wrap';
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.gap = '8px';
+                    wrapper.style.flexWrap = 'wrap';
 
                     const dateSlots = slots.filter(s => s.date === date);
                     dateSlots.forEach(slot => {
-                        const btn = document.createElement('button');
-                        btn.className = `btn-toggle ${slot.is_active ? 'active-on' : 'active-off'}`;
-                        btn.textContent = `${slot.time} (${slot.is_active ? '활성' : '마감'})`;
-                        btn.onclick = () => toggleTimeSlot(slot.id, !slot.is_active);
-                        btnWrapper.appendChild(btn);
+                        // 해당 시간대에 예약된 인원 수 계산
+                        const currentBookedCount = data.filter(i => i.date === date && i.time === slot.time && i.status !== 'cancelled').length;
+
+                        const card = document.createElement('div');
+                        card.className = 'slot-card';
+                        card.innerHTML = `
+                            <b>${slot.time}</b>
+                            <span style="color:#666; font-size:11px;">(${currentBookedCount}/${slot.max_capacity}명)</span>
+                            <button class="btn-toggle ${slot.is_active ? 'active-on' : 'active-off'}" onclick="toggleTimeSlot(${slot.id}, ${!slot.is_active})">
+                                ${slot.is_active ? '활성' : '마감'}
+                            </button>
+                            <input type="number" id="cap_${slot.id}" value="${slot.max_capacity}" min="1" max="50">
+                            <button onclick="updateCapacity(${slot.id})" style="padding:3px 6px; font-size:11px; cursor:pointer;">설정</button>
+                        `;
+                        wrapper.appendChild(card);
                     });
 
-                    dateBox.appendChild(btnWrapper);
+                    dateBox.appendChild(wrapper);
                     controlContainer.appendChild(dateBox);
                 });
 
-                // 2. 전체 예약 목록 로드
-                const res = await fetch('/api/reservations');
-                const data = await res.json();
-                cachedReservations = data; // 엑셀 출력을 위해 저장
-                
                 const tbody = document.getElementById('reservationTableBody');
                 
                 // 새로운 신청 감지 알림 기능 (처음 로딩 제외)
@@ -159,6 +172,31 @@
                     loadAdminData();
                 } else {
                     alert('변경 실패');
+                }
+            } catch (err) {
+                alert('통신 오류 발생');
+            }
+        }
+
+        async function updateCapacity(id) {
+            const inputVal = document.getElementById(`cap_${id}`).value;
+            const maxCapacity = Number(inputVal);
+            if (!maxCapacity || maxCapacity < 1) {
+                return alert('올바른 인원 수를 입력해주세요.');
+            }
+
+            try {
+                const res = await fetch(`/api/time-slots/${id}/capacity`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ maxCapacity })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    alert('최대 제한 인원이 변경되었습니다.');
+                    loadAdminData();
+                } else {
+                    alert('인원 변경 실패');
                 }
             } catch (err) {
                 alert('통신 오류 발생');

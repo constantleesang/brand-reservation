@@ -93,7 +93,11 @@
                     wrapper.style.gap = '8px';
                     wrapper.style.flexWrap = 'wrap';
 
-                    const dateSlots = slots.filter(s => s.date === date);
+                    // 시간순으로 정렬하여 17:00, 17:30 등 모든 시간대가 순서대로 표시되도록 수정
+                    const dateSlots = slots
+                        .filter(s => s.date === date)
+                        .sort((a, b) => a.time.localeCompare(b.time));
+
                     dateSlots.forEach(slot => {
                         // 해당 시간대에 예약된 인원 수 계산
                         const currentBookedCount = data.filter(i => i.date === date && i.time === slot.time && i.status !== 'cancelled').length;

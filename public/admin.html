@@ -6,7 +6,7 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background: #f4f6f9; padding: 20px; }
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #003366; border-bottom: 2px solid #003366; padding-bottom: 10px; }
+        h2 { color: #003366; border-bottom: 2px solid #003366; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         .section { margin-top: 30px; }
         .date-section { margin-bottom: 20px; background: #f9fbfd; padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8; }
         .date-section h4 { margin: 0 0 10px 0; color: #003366; }
@@ -17,11 +17,16 @@
         .active-on { background: #28a745; color: white; }
         .active-off { background: #dc3545; color: white; }
         .badge { display: inline-block; padding: 3px 8px; background: #e9ecef; border-radius: 4px; font-weight: bold; color: #495057; font-size: 12px; }
+        .btn-excel { background: #28a745; color: white; border: none; padding: 8px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .btn-excel:hover { background: #218838; }
+        .table-header-flex { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>관리자 대시보드 - 신발 DB 구축 신청 관리</h2>
+        <h2>
+            관리자 대시보드 - 신발 DB 구축 신청 관리
+        </h2>
 
         <!-- 날짜별 시간대별 제어 섹션 -->
         <div class="section">
@@ -31,7 +36,10 @@
 
         <!-- 전체 신청자 현황 -->
         <div class="section">
-            <h3>📋 전체 신청자 목록 (신청번호 및 브랜드 순서 포함)</h3>
+            <div class="table-header-flex">
+                <h3 style="margin:0;">📋 전체 신청자 목록 (신청번호 및 브랜드 순서 포함)</h3>
+                <button class="btn-excel" onclick="downloadExcel()">📊 엑셀 다운로드</button>
+            </div>
             <table>
                 <thead>
                     <tr>
@@ -56,6 +64,7 @@
 
     <script>
         let previousReservationCount = -1;
+        let cachedReservations = []; // 엑셀 다운로드용 데이터 보관
 
         async function loadAdminData() {
             try {
@@ -92,6 +101,8 @@
                 // 2. 전체 예약 목록 로드
                 const res = await fetch('/api/reservations');
                 const data = await res.json();
+                cachedReservations = data; // 엑셀 출력을 위해 저장
+                
                 const tbody = document.getElementById('reservationTableBody');
                 
                 // 새로운 신청 감지 알림 기능 (처음 로딩 제외)
@@ -105,23 +116,12 @@
                     return;
                 }
 
-                // 동일 브랜드 및 사이즈별 순서 계산을 위한 정렬 및 카운팅용 배열
-                // 오래된 신청 순서대로 순번을 매기기 위해 복사 후 날짜순 정렬
                 const sortedForOrder = [...data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                const brandSizeCounters = {};
 
                 let html = '';
-                // 목록은 최신순으로 출력하되, 순서는 누적 순번 부여
                 data.forEach((item, index) => {
                     const formattedTime = new Date(item.createdAt).toLocaleString('ko-KR');
                     
-                    // 동일 브랜드 & 사이즈 순서 계산
-                    const key = `${item.brand}_${item.shoeSize}`;
-                    if (!brandSizeCounters[key]) {
-                        brandSizeCounters[key] = 0;
-                    }
-                    // 역순(최신순) 정렬 기준일 때 전체 순번 매기기 위해 전체 배열 기준으로 처리
-                    // 정확한 순번을 위해 전체 내역 기준 해당 브랜드/사이즈의 몇 번째인지 파악
                     const matchingItems = sortedForOrder.filter(i => i.brand === item.brand && i.shoeSize === item.shoeSize && i.status !== 'cancelled');
                     const itemSeq = matchingItems.findIndex(i => i.id === item.id) + 1;
                     const seqBadge = (item.status !== 'cancelled' && itemSeq > 0) ? `<span class="badge">[${itemSeq}번째]</span>` : '';
@@ -163,6 +163,71 @@
             } catch (err) {
                 alert('통신 오류 발생');
             }
+        }
+
+        // 엑셀 다운로드 기능 함수
+        function downloadExcel() {
+            if (!cachedReservations || cachedReservations.length === 0) {
+                return alert('다운로드할 신청 데이터가 없습니다.');
+            }
+
+            let excelHtml = `
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                <head><meta charset="utf-8"></head>
+                <body>
+                <table border="1">
+                    <thead>
+                        <tr style="background:#003366; color:#ffffff;">
+                            <th>신청번호</th>
+                            <th>신청시간</th>
+                            <th>이름</th>
+                            <th>연락처</th>
+                            <th>학과</th>
+                            <th>학번</th>
+                            <th>브랜드</th>
+                            <th>사이즈</th>
+                            <th>방문일정</th>
+                            <th>상태</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            cachedReservations.forEach((item, index) => {
+                const formattedTime = new Date(item.createdAt).toLocaleString('ko-KR');
+                const statusText = item.status === 'confirmed' ? '신청완료' : item.status;
+                excelHtml += `
+                    <tr>
+                        <td>#${cachedReservations.length - index}</td>
+                        <td>${formattedTime}</td>
+                        <td>${item.name}</td>
+                        <td>${item.phone}</td>
+                        <td>${item.department}</td>
+                        <td>${item.studentId}</td>
+                        <td>${item.brand}</td>
+                        <td>${item.shoeSize}mm</td>
+                        <td>${item.date} ${item.time}</td>
+                        <td>${statusText}</td>
+                    </tr>
+                `;
+            });
+
+            excelHtml += `
+                    </tbody>
+                </table>
+                </body>
+                </html>
+            `;
+
+            const blob = new Blob([excelHtml], { type: 'application/vnd.ms-excel' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `신발DB구축_신청목록_${new Date().toISOString().slice(0, 10)}.xls`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
         }
 
         // 초기 로드 및 5초마다 자동 실시간 갱신 (신규 신청 감지용)

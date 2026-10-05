@@ -14,7 +14,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gpplcfeeuxsanujakgdd.s
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_Gmk6NGhdwPqD8slu9Z6WDw_nwaNF2aH'; 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 1. 전체 예약 목록 조회 (관리자용 - 신청시간 포함, 카멜케이스 매핑)
+// 1. 전체 예약 목록 조회
 app.get('/api/reservations', async (req, res) => {
     try {
         const { data, error } = await supabase.from('brand_reservations').select('*').order('created_at', { ascending: false });
@@ -32,7 +32,7 @@ app.get('/api/reservations', async (req, res) => {
     }
 });
 
-// 2. 시간대별 활성화 상태 조회 (날짜별 필터 지원)
+// 2. 시간대별 활성화 상태 조회
 app.get('/api/time-slots', async (req, res) => {
     const { date } = req.query;
     try {
@@ -61,7 +61,7 @@ app.patch('/api/time-slots/:id', async (req, res) => {
     }
 });
 
-// [추가] 3-1. 관리자: 시간대별 최대 제한 인원 변경 API
+// 3-1. 관리자: 시간대별 최대 제한 인원 변경 API
 app.patch('/api/time-slots/:id/capacity', async (req, res) => {
     const id = req.params.id;
     const { maxCapacity } = req.body;
@@ -74,7 +74,7 @@ app.patch('/api/time-slots/:id/capacity', async (req, res) => {
     }
 });
 
-// 4. 브랜드/사이즈별 현재 신청 인원 카운트 조회 (실시간 마감용)
+// 4. 브랜드/사이즈별 현재 신청 인원 카운트 조회
 app.get('/api/shoe-counts', async (req, res) => {
     try {
         const { data, error } = await supabase.from('brand_reservations').select('brand, shoe_size, status').neq('status', 'cancelled');
@@ -104,7 +104,7 @@ app.get('/api/reservations/search', async (req, res) => {
     }
 });
 
-// 6. 예약 신청 (중복 체크, 사이즈별 3명 및 시간대별 동적 인원 제한 검증)
+// 6. 예약 신청 (설정 인원 초과 시 자동 마감 및 예외 처리)
 app.post('/api/reservations', async (req, res) => {
     const { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed } = req.body;
 
@@ -113,7 +113,7 @@ app.post('/api/reservations', async (req, res) => {
     }
 
     try {
-        // 전체 예약 데이터 조회 (중복 및 정원 체크용)
+        // 전체 예약 데이터 조회
         const { data: allData, error: fetchErr } = await supabase.from('brand_reservations').select('*').neq('status', 'cancelled');
         if (fetchErr) throw fetchErr;
 
@@ -123,28 +123,30 @@ app.post('/api/reservations', async (req, res) => {
             return res.status(400).json({ success: false, message: '이미 해당 학번이나 연락처로 신청된 내역이 존재합니다. (1인 1회)' });
         }
 
-        // 해당 브랜드의 해당 사이즈 신청자 수 카운트 (최대 3명 제한 유지)
+        // 1) 브랜드 및 사이즈별 정원 체크 (최대 3명)
         const sizeCount = allData.filter(item => item.brand === brand && item.shoe_size === String(shoeSize)).length;
         if (sizeCount >= 3) {
             return res.status(400).json({ success: false, message: `선택하신 [${brand} - ${shoeSize}mm]는 이미 정원 3명이 마감되었습니다.` });
         }
 
-        // [수정] 해당 날짜 및 시간대의 슬롯 설정 정보(최대 인원, 활성화 여부) 조회
+        // 2) 날짜 및 시간대 슬롯 정보 조회
         const { data: slotData, error: slotErr } = await supabase.from('time_slots').select('*').eq('date', date).eq('time', time).single();
         if (slotErr || !slotData) {
             return res.status(400).json({ success: false, message: '유효하지 않은 예약 시간대입니다.' });
         }
 
         if (!slotData.is_active) {
-            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 마감되었습니다.` });
+            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 이미 마감되었습니다.` });
         }
 
-        // 해당 날짜 및 시간대 실제 예약자 수 카운트
+        // 3) 시간대별 실제 예약자 수 및 최대 제한 인원(max_capacity) 비교
         const timeCount = allData.filter(item => item.date === date && item.time === time).length;
-        const maxLimit = slotData.max_capacity; // 시간대별 설정된 최대 제한 인원
+        const maxLimit = slotData.max_capacity; 
 
         if (timeCount >= maxLimit) {
-            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 정원 ${maxLimit}명이 마감되었습니다.` });
+            // 정원 초과 시 자동으로 시간대 상태를 비활성화(마감) 처리
+            await supabase.from('time_slots').update({ is_active: false }).eq('id', slotData.id);
+            return res.status(400).json({ success: false, message: `선택하신 [${date} ${time}] 시간대는 정원 ${maxLimit}명이 마감되었습니다. (자동 마감 처리됨)` });
         }
 
         const newReservation = {
@@ -163,6 +165,11 @@ app.post('/api/reservations', async (req, res) => {
         const { error: insertErr } = await supabase.from('brand_reservations').insert([newReservation]);
         if (insertErr) throw insertErr;
 
+        // 만약 이번 예약으로 인해 정원이 꽉 차게 되었다면 해당 슬롯을 자동으로 비활성화(마감) 처리
+        if (timeCount + 1 >= maxLimit) {
+            await supabase.from('time_slots').update({ is_active: false }).eq('id', slotData.id);
+        }
+
         res.json({ success: true, message: '신발 데이터 베이스 구축 참여 예약이 완료되었습니다!' });
     } catch (err) {
         console.error('예약 처리 중 에러 발생:', err);
@@ -170,7 +177,7 @@ app.post('/api/reservations', async (req, res) => {
     }
 });
 
-// 7. 예약 취소
+// 7. 예약 취소 (취소 시 자리가 생기므로 시간대 활성화 상태 자동 복구 기능 추가 가능)
 app.delete('/api/reservations/:id', async (req, res) => {
     const id = Number(req.params.id);
     try {

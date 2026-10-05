@@ -130,21 +130,25 @@
             }
 
             try {
+                // 예약 내역 최신화 동기화
+                const resAll = await fetch('/api/reservations');
+                allReservations = await resAll.json();
+
                 const res = await fetch(`/api/time-slots?date=${encodeURIComponent(selectedDate)}`);
                 const slots = await res.json();
                 timeSelect.innerHTML = '<option value="">시간을 선택하세요</option>';
                 timeSelect.disabled = false;
                 
                 slots.forEach(slot => {
-                    // 해당 날짜 + 해당 시간대에 이미 예약된 인원 수 계산
                     const slotCount = allReservations.filter(item => item.date === selectedDate && item.time === slot.time && item.status !== 'cancelled').length;
-                    const maxCap = slot.max_capacity; // [수정] 관리자가 설정한 동적 최대 인원 반영
+                    const maxCap = slot.max_capacity; 
                     
                     const opt = document.createElement('option');
                     opt.value = slot.time;
                     
+                    // 설정 인원(maxCap)을 초과했거나 관리자가 끈 경우 자동 마감 처리
                     if (!slot.is_active || slotCount >= maxCap) {
-                        opt.textContent = `${slot.time} (${slotCount >= maxCap ? `마감 ${slotCount}/${maxCap}` : '관리자 마감'})`;
+                        opt.textContent = `${slot.time} (${slotCount >= maxCap ? `마감 정원초과 ${slotCount}/${maxCap}` : '마감'})`;
                         opt.disabled = true;
                         opt.className = 'disabled-slot';
                     } else {
@@ -202,66 +206,84 @@
 
             if (!name) { alert('이름을 입력해주세요.'); document.getElementById('name').focus(); return; }
             if (!phone) { alert('연락처를 입력해주세요.'); document.getElementById('phone').focus(); return; }
-            if (!department) { alert('소속(학과)을 입력해주세요.'); document.getElementById('department').focus(); return; }
+            if (!department) { alert('소속 학과를 입력해주세요.'); document.getElementById('department').focus(); return; }
             if (!studentId) { alert('학번을 입력해주세요.'); document.getElementById('studentId').focus(); return; }
-            if (!brand) { alert('신발 브랜드를 선택해주세요.'); document.getElementById('brand').focus(); return; }
+            if (!brand) { alert('브랜드를 선택해주세요.'); document.getElementById('brand').focus(); return; }
             if (!shoeSize) { alert('신발 사이즈를 선택해주세요.'); document.getElementById('shoeSize').focus(); return; }
-            if (!date) { alert('방문 예약 날짜를 선택해주세요.'); document.getElementById('date').focus(); return; }
-            if (!time) { alert('예약 시간을 선택해주세요.'); document.getElementById('time').focus(); return; }
-            if (!privacyAgreed) { alert('개인정보 수집 및 이용에 동의해주세요.'); document.getElementById('privacyAgreed').focus(); return; }
-
-            const payload = { name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed };
+            if (!date) { alert('방문 날짜를 선택해주세요.'); document.getElementById('date').focus(); return; }
+            if (!time) { alert('방문 시간을 선택해주세요.'); document.getElementById('time').focus(); return; }
+            if (!privacyAgreed) { alert('개인정보 수집 및 이용에 동의해주세요.'); return; }
 
             try {
-                const res = await fetch('/api/reservations', {
+                const response = await fetch('/api/reservations', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ name, phone, department, studentId, brand, shoeSize, date, time, privacyAgreed })
                 });
-                const result = await res.json();
-                alert(result.message);
-                if (result.success) location.reload();
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(result.message);
+                    location.reload();
+                } else {
+                    alert(result.message);
+                    loadCounts(); // 정보 갱신
+                }
             } catch (err) {
                 alert('서버 통신 중 오류가 발생했습니다.');
             }
         });
 
         async function searchReservation() {
-            const phone = document.getElementById('searchPhone').value;
-            if (!phone) return alert('연락처를 입력해주세요.');
+            const phone = document.getElementById('searchPhone').value.trim();
+            const resultDiv = document.getElementById('searchResult');
+            if (!phone) return alert('조회할 연락처를 입력해주세요.');
 
-            const res = await fetch(`/api/reservations/search?phone=${phone}`);
-            const data = await res.json();
-            const div = document.getElementById('searchResult');
+            try {
+                const res = await fetch(`/api/reservations/search?phone=${encodeURIComponent(phone)}`);
+                const data = await res.json();
 
-            if (data.length === 0) {
-                div.innerHTML = '<p style="color:red;">예약 내역이 없습니다.</p>';
-                return;
+                if (data.length === 0) {
+                    resultDiv.innerHTML = '<p style="color:red; font-size:13px;">해당 연락처로 신청된 내역이 없습니다.</p>';
+                    return;
+                }
+
+                let html = '<ul style="padding-left:20px; font-size:13px;">';
+                data.forEach(item => {
+                    html += `
+                        <li>
+                            <b>[${item.brand} ${item.shoeSize}mm]</b> ${item.date} ${item.time} 
+                            <button onclick="cancelReservation(${item.id})" style="width:auto; padding:3px 6px; font-size:11px; background:#dc3545; margin-left:8px;">예약 취소</button>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+                resultDiv.innerHTML = html;
+            } catch (err) {
+                resultDiv.innerHTML = '<p style="color:red;">조회 중 오류가 발생했습니다.</p>';
             }
-
-            let html = '';
-            data.forEach(item => {
-                html += `
-                    <div style="background:#fff; border:1px solid #ccc; padding:10px; border-radius:5px; margin-bottom:8px;">
-                        <b>${item.name}</b> (${item.department} / 학번: ${item.studentId})<br>
-                        신청 브랜드/사이즈: ${item.brand} (${item.shoe_size}mm)<br>
-                        방문 일정: ${item.date} ${item.time}<br>
-                        <button onclick="cancelReservation(${item.id})" style="background:#dc3545; padding:6px; font-size:14px; margin-top:8px;">예약 취소하기</button>
-                    </div>
-                `;
-            });
-            div.innerHTML = html;
         }
 
         async function cancelReservation(id) {
             if (!confirm('정말 예약을 취소하시겠습니까?')) return;
-            const res = await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
-            const result = await res.json();
-            alert(result.message);
-            if (result.success) location.reload();
+            try {
+                const res = await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    alert('예약이 취소되었습니다.');
+                    searchReservation();
+                    loadCounts();
+                } else {
+                    alert(result.message);
+                }
+            } catch (err) {
+                alert('취소 처리 중 오류가 발생했습니다.');
+            }
         }
 
+        // 초기 데이터 로드 및 주기적 갱신
         loadCounts();
+        setInterval(loadCounts, 10000);
     </script>
 </body>
 </html>

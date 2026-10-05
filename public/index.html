@@ -136,18 +136,19 @@
                 timeSelect.disabled = false;
                 
                 slots.forEach(slot => {
-                    // 해당 날짜 + 해당 시간대에 이미 예약된 인원 수 계산 (최대 3명 제한)
+                    // 해당 날짜 + 해당 시간대에 이미 예약된 인원 수 계산
                     const slotCount = allReservations.filter(item => item.date === selectedDate && item.time === slot.time && item.status !== 'cancelled').length;
+                    const maxCap = slot.max_capacity; // [수정] 관리자가 설정한 동적 최대 인원 반영
                     
                     const opt = document.createElement('option');
                     opt.value = slot.time;
                     
-                    if (!slot.is_active || slotCount >= 3) {
-                        opt.textContent = `${slot.time} (${slotCount >= 3 ? `마감 3/3` : '관리자 마감'})`;
+                    if (!slot.is_active || slotCount >= maxCap) {
+                        opt.textContent = `${slot.time} (${slotCount >= maxCap ? `마감 ${slotCount}/${maxCap}` : '관리자 마감'})`;
                         opt.disabled = true;
                         opt.className = 'disabled-slot';
                     } else {
-                        opt.textContent = `${slot.time} (신청 가능 ${slotCount}/3)`;
+                        opt.textContent = `${slot.time} (신청 가능 ${slotCount}/${maxCap})`;
                     }
                     timeSelect.appendChild(opt);
                 });
@@ -189,7 +190,6 @@
         document.getElementById('reservationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // 프론트엔드 필수 입력 검증 및 알림
             const name = document.getElementById('name').value.trim();
             const phone = document.getElementById('phone').value.trim();
             const department = document.getElementById('department').value.trim();
@@ -261,7 +261,6 @@
             if (result.success) location.reload();
         }
 
-        // 페이지 진입 시 데이터 로드
         loadCounts();
     </script>
 </body>
